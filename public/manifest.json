@@ -1,0 +1,55 @@
+{
+  "name": "Transferencia - Compartir sin Limites",
+  "short_name": "Transferencia",
+  "description": "Transferencia de archivos e imagenes en tiempo real entre PC y movil",
+  "start_url": "/",
+  "display": "standalone",
+  "scope": "/",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-540x720.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "categories": ["utilities", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Crear Sesion",
+      "short_name": "Crear",
+      "description": "Crear una nueva sesion de transferencia",
+      "url": "/?mode=create",
+      "icons": [{"src": "/favicon.ico", "sizes": "192x192"}]
+    },
+    {
+      "name": "Conectar",
+      "short_name": "Conectar",
+      "description": "Conectarse a una sesion existente",
+      "url": "/?mode=join",
+      "icons": [{"src": "/favicon.ico", "sizes": "192x192"}]
+    }
+  ]
+}
