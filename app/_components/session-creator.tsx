@@ -3,7 +3,8 @@
 
 import { useEffect, useState } from 'react';
 import { Copy } from 'lucide-react';
-import { QRCodeCanvas } from 'qrcode.react';
+import dynamic from 'next/dynamic';
+const QRCodeCanvas = dynamic(() => import('qrcode.react').then(m => m.QRCodeCanvas), { ssr: false });
 import { supabase } from '@/lib/supabase-client';
 import { generateSessionId, getExpirationTime } from '@/lib/session-utils';
 
