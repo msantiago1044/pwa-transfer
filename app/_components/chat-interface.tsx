@@ -4,7 +4,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Send, Paperclip, Trash2, LogOut, File, Download, Eye, QrCode, X, Copy } from 'lucide-react';
 import dynamic from 'next/dynamic';
-const QRCodeCanvas = dynamic(() => import('qrcode.react').then(m => m.QRCodeCanvas), { ssr: false });
+const QRCodeCanvas = dynamic(
+  () => import('qrcode.react').then(m => ({ default: m.QRCodeCanvas })),
+  { ssr: false }
+);
 import { supabase } from '@/lib/supabase-client';
 import { isFileSizeValid, formatFileSize, isImageFile, compressImage } from '@/lib/file-utils';
 
