@@ -99,7 +99,8 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
       if (dbError) throw dbError;
       setMessages(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading');
+      console.error('SEND ERROR:', err);
+      setError(err instanceof Error ? err.message : 'Error sending');
     } finally {
       setLoading(false);
     }
