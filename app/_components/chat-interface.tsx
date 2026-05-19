@@ -4,12 +4,17 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Send, Paperclip, Trash2, LogOut, File, Download, Eye, QrCode, X, Copy } from 'lucide-react';
 import dynamic from 'next/dynamic';
-const QRCodeCanvas = dynamic(
-  () => import('qrcode.react').then(m => ({ default: m.QRCodeCanvas })),
-  { ssr: false }
-);
-import { supabase } from '@/lib/supabase-client';
+const QRCodeCanvas = dynamic(() => import('qrcode.react').then(m => m.QRCodeCanvas), { ssr: false });
 import { isFileSizeValid, formatFileSize, isImageFile, compressImage } from '@/lib/file-utils';
+
+// Supabase cargado de forma lazy — solo en el browser, nunca en SSR
+let _sb: any = null;
+function getSupabase() {
+  if (!_sb && typeof window !== 'undefined') {
+    _sb = require('@/lib/supabase-client').supabase;
+  }
+  return _sb;
+}
 
 interface Message {
   id: string;
@@ -70,19 +75,39 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
     loadMessages();
   }, [sessionId]);
 
+  // Realtime subscription — solo corre en el browser dentro de useEffect
   useEffect(() => {
-    const channel = supabase
-      .channel(`session:${sessionId}`)
-      .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `session_code=eq.${sessionId}` },
-        (payload: any) => { setMessages((prev) => [...prev, payload.new as Message]); scrollToBottom(); }
-      )
-      .on('postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'messages', filter: `session_code=eq.${sessionId}` },
-        (payload: any) => { setMessages((prev) => prev.filter((m) => m.id !== payload.old.id)); }
-      )
-      .subscribe();
-    return () => { channel.unsubscribe().catch(console.error); };
+    if (typeof window === 'undefined') return;
+    const sb = getSupabase();
+    if (!sb) return;
+
+    let channel: any;
+    try {
+      channel = sb
+        .channel(`session:${sessionId}`)
+        .on('postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages', filter: `session_code=eq.${sessionId}` },
+          (payload: any) => {
+            setMessages((prev) => [...prev, payload.new as Message]);
+            scrollToBottom();
+          }
+        )
+        .on('postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'messages', filter: `session_code=eq.${sessionId}` },
+          (payload: any) => {
+            setMessages((prev) => prev.filter((m) => m.id !== payload.old.id));
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.error('Realtime error:', err);
+    }
+
+    return () => {
+      if (channel) {
+        try { channel.unsubscribe(); } catch (e) { /* ignore */ }
+      }
+    };
   }, [sessionId]);
 
   useEffect(() => { scrollToBottom(); }, [messages]);
@@ -94,13 +119,17 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
   async function loadMessages() {
     try {
       setLoading(true);
-      const { data, error: dbError } = await supabase
-        .from('messages').select('*').eq('session_code', sessionId).order('created_at', { ascending: true });
+      const sb = getSupabase();
+      if (!sb) throw new Error('Client not ready');
+      const { data, error: dbError } = await sb
+        .from('messages')
+        .select('*')
+        .eq('session_code', sessionId)
+        .order('created_at', { ascending: true });
       if (dbError) throw dbError;
       setMessages(data || []);
     } catch (err) {
-      console.error('SEND ERROR:', err);
-      setError(err instanceof Error ? err.message : 'Error sending');
+      setError(err instanceof Error ? err.message : 'Error loading');
     } finally {
       setLoading(false);
     }
@@ -119,6 +148,9 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
 
   async function handleSend() {
     if (!textInput.trim() && !pendingFile) return;
+    const sb = getSupabase();
+    if (!sb) { setError('Error de conexión'); return; }
+
     try {
       setError(null);
       setUploading(true);
@@ -129,17 +161,23 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
 
         let fileToUpload = file;
         if (isImageFile(file)) {
-          const compressed = await compressImage(file);
-          fileToUpload = new File([compressed], file.name, { type: 'image/jpeg' });
+          try {
+            const compressed = await compressImage(file);
+            // Usar window.File para evitar conflicto con Next.js
+            fileToUpload = new window.File([compressed], file.name, { type: 'image/jpeg' });
+          } catch (compressErr) {
+            console.warn('Compression failed, uploading original:', compressErr);
+            fileToUpload = file;
+          }
         }
 
         const storagePath = `${sessionId}/${Date.now()}-${file.name}`;
-        const { error: storageError } = await supabase.storage.from('file-transfers').upload(storagePath, fileToUpload);
+        const { error: storageError } = await sb.storage.from('file-transfers').upload(storagePath, fileToUpload);
         if (storageError) throw storageError;
 
-        const { data: publicUrlData } = supabase.storage.from('file-transfers').getPublicUrl(storagePath);
+        const { data: publicUrlData } = sb.storage.from('file-transfers').getPublicUrl(storagePath);
 
-        const { error: dbError } = await supabase.from('messages').insert({
+        const { error: dbError } = await sb.from('messages').insert({
           session_code: sessionId,
           content: textInput.trim() || null,
           file_url: publicUrlData.publicUrl,
@@ -152,7 +190,7 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
         if (dbError) throw dbError;
         clearPendingFile();
       } else {
-        const { error: dbError } = await supabase.from('messages').insert({
+        const { error: dbError } = await sb.from('messages').insert({
           session_code: sessionId,
           content: textInput.trim(),
           device_name: deviceName.current,
@@ -186,13 +224,15 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
 
   async function deleteMessage(msg: Message) {
     if (!confirm('¿Eliminar este mensaje?')) return;
+    const sb = getSupabase();
+    if (!sb) return;
     try {
       setDeletingId(msg.id);
       if (msg.file_url) {
         const urlPath = msg.file_url.split('/file-transfers/')[1];
-        if (urlPath) await supabase.storage.from('file-transfers').remove([decodeURIComponent(urlPath)]);
+        if (urlPath) await sb.storage.from('file-transfers').remove([decodeURIComponent(urlPath)]);
       }
-      const { error: dbError } = await supabase.from('messages').delete().eq('id', msg.id);
+      const { error: dbError } = await sb.from('messages').delete().eq('id', msg.id);
       if (dbError) throw dbError;
       setMessages((prev) => prev.filter((m) => m.id !== msg.id));
     } catch (err) {
@@ -204,8 +244,10 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
 
   async function clearMessages() {
     if (!confirm('¿Eliminar todos los mensajes?')) return;
+    const sb = getSupabase();
+    if (!sb) return;
     try {
-      const { error: dbError } = await supabase.from('messages').delete().eq('session_code', sessionId);
+      const { error: dbError } = await sb.from('messages').delete().eq('session_code', sessionId);
       if (dbError) throw dbError;
       setMessages([]);
     } catch (err) {
@@ -228,7 +270,6 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
   return (
     <div className="flex flex-col h-screen bg-blue-50 relative" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
 
-      {/* Drag overlay */}
       {isDragging && (
         <div className="absolute inset-0 z-50 bg-blue-500/20 border-4 border-dashed border-blue-500 flex items-center justify-center pointer-events-none">
           <div className="bg-white rounded-2xl p-8 shadow-xl text-center">
@@ -238,7 +279,6 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
         </div>
       )}
 
-      {/* QR Modal */}
       {showQR && (
         <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowQR(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center" onClick={e => e.stopPropagation()}>
@@ -262,7 +302,6 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
         </div>
       )}
 
-      {/* Image preview modal */}
       {previewUrl && (
         <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
           <button className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2" onClick={() => setPreviewUrl(null)}><X size={24} /></button>
@@ -270,7 +309,6 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
         </div>
       )}
 
-      {/* Header */}
       <div className="bg-white shadow-md sticky top-0 z-40">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
@@ -291,7 +329,6 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">
@@ -309,7 +346,6 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
         ) : (
           messages.map((msg) => (
             <div key={msg.id} className={`bg-white rounded-2xl shadow-sm p-4 hover:shadow-md transition-shadow group relative ${deletingId === msg.id ? 'opacity-40' : ''}`}>
-              {/* Per-message delete */}
               <button
                 onClick={() => deleteMessage(msg)}
                 disabled={deletingId === msg.id}
@@ -318,15 +354,12 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
               >
                 <X size={16} />
               </button>
-
               {msg.device_name && (
                 <span className="inline-block text-xs bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full mb-2">
                   📱 {msg.device_name}
                 </span>
               )}
-
               {msg.content && <p className="text-gray-900 break-words pr-6">{msg.content}</p>}
-
               {msg.file_url && (
                 <div className="mt-2">
                   {msg.file_type?.startsWith('image/') ? (
@@ -356,9 +389,7 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area */}
       <div className="bg-white border-t border-gray-200 p-4">
-        {/* Staged file preview */}
         {pendingFile && (
           <div className="max-w-4xl mx-auto mb-3">
             <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 w-fit max-w-full">
@@ -374,7 +405,6 @@ export default function ChatInterface({ sessionId, onExit }: ChatInterfaceProps)
             </div>
           </div>
         )}
-
         <div className="max-w-4xl mx-auto flex gap-3">
           <input type="file" ref={fileInputRef} onChange={handleFileInputChange} disabled={uploading} className="hidden" />
           <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="flex-shrink-0 bg-gray-100 hover:bg-gray-200 text-gray-700 p-3 rounded-xl disabled:opacity-50">
