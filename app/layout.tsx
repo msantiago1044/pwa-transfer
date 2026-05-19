@@ -22,8 +22,8 @@ export const metadata: Metadata = {
   description: 'Transferencia de archivos e imagenes en tiempo real entre PC y movil sin registro',
   manifest: '/manifest.json',
   keywords: ['transferencia', 'archivos', 'compartir', 'PWA', 'tiempo real'],
-  authors: [{ name: 'Abacus AI' }],
-  creator: 'Abacus AI',
+  authors: [{ name: 'Transferencia App' }],
+  creator: 'Transferencia App',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -32,20 +32,14 @@ export const metadata: Metadata = {
   icons: {
     icon: '/favicon.svg',
     shortcut: '/favicon.svg',
-    apple: '/apple-touch-icon.png',
+    apple: '/icon-192x192.png',
   },
   openGraph: {
     type: 'website',
-    url: 'https://transferencia.app',
     title: 'Transferencia - Compartir sin Limites',
     description: 'Transferencia de archivos e imagenes en tiempo real entre PC y movil',
     siteName: 'Transferencia',
-    images: [{
-      url: '/og-image.png',
-      width: 1200,
-      height: 630,
-      alt: 'Transferencia - Compartir sin Limites',
-    }],
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'Transferencia' }],
   },
   twitter: {
     card: 'summary_large_image',
@@ -55,22 +49,16 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="theme-color" content="#3b82f6" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <script src="https://apps.abacus.ai/chatllm/appllm-lib.js" async></script>
+        <link rel="apple-touch-icon" href="/icon-192x192.png" />
       </head>
       <body className={`${dmSans.variable} ${jakartaSans.variable} ${jetbrainsMono.variable} font-sans`}>
-        <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
